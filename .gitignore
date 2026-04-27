@@ -1,0 +1,24 @@
+# Dados raw (sensíveis e grandes)
+orders_raw.json
+*.log
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Credenciais
+.env
+.env.*
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Tunnel artifacts
+PUBLIC_URL.txt
+httpserver.err
+
+# Editor
+.vscode/
+.idea/
