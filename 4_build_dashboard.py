@@ -6,62 +6,101 @@ Renders TWO product tables:
   (B) Top 15 with lowest CAC (28D, min N new customers filter)
 Plus daily trend chart + product x day CAC heatmap.
 
-Reads cac_by_product.json, writes dashboard_cac_br.html.
+Usage:
+  python 4_build_dashboard.py             # default: BR
+  python 4_build_dashboard.py --country us
+  python 4_build_dashboard.py --country br
 """
 
+import argparse
 import json
 from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-DATA = json.loads((ROOT / "cac_by_product.json").read_text(encoding="utf-8"))
-OUT = ROOT / "dashboard_cac_br.html"
 
-summary = DATA["summary"]
-products = DATA["products"]
-dates = DATA["dates"]
+CONFIGS = {
+    "br": {
+        "input":   "cac_by_product.json",
+        "output":  "dashboard_cac_br.html",
+        "title":   "Larroude BR — CAC por Produto por Dia",
+        "header":  "LARROUDE BR — CAC POR PRODUTO POR DIA",
+        "sub":     "Top 15 por volume + Top 15 menor CAC · Meta Ads BR (3 contas) + Shopify BR",
+        "currency_symbol": "R$",
+        "currency_suffix": "",
+        "decimal_sep":  ",",
+        "thousand_sep": ".",
+        "shop_label":   "Meta Ads (3 contas BR)",
+        "fx_note":      "USD→BRL fixo: 5.10 (conta act_1735567560524487 reporta em USD)",
+        "lang":         "pt-BR",
+    },
+    "us": {
+        "input":   "cac_by_product_us.json",
+        "output":  "dashboard_cac_us.html",
+        "title":   "Larroude US — CAC por Produto por Dia",
+        "header":  "LARROUDE US — CAC POR PRODUTO POR DIA",
+        "sub":     "Top 15 por volume + Top 15 menor CAC · Meta Ads US (3 contas) + Shopify US",
+        "currency_symbol": "$",
+        "currency_suffix": "",
+        "decimal_sep":  ".",
+        "thousand_sep": ",",
+        "shop_label":   "Meta Ads (3 contas US)",
+        "fx_note":      "Sem conversão · todas as 3 contas + Shopify reportam em USD",
+        "lang":         "pt-BR",
+    },
+}
 
-# Index by product_id for the JS side
-by_id = {p["product_id"]: p for p in products}
-top15_units = [by_id[pid] for pid in summary["top15_units_ids"] if pid in by_id]
-top15_lowcac = [by_id[pid] for pid in summary["top15_lowcac_ids"] if pid in by_id]
 
-
-def fmt_brl(v, decimals=0):
+def fmt_money(v, cfg, decimals=0):
     if v is None:
         return "—"
     s = f"{v:,.{decimals}f}"
-    s = s.replace(",", "_").replace(".", ",").replace("_", ".")
-    return f"R$ {s}"
+    if cfg["thousand_sep"] != "," or cfg["decimal_sep"] != ".":
+        s = s.replace(",", "_").replace(".", cfg["decimal_sep"]).replace("_", cfg["thousand_sep"])
+    return f"{cfg['currency_symbol']} {s}{cfg['currency_suffix']}"
 
 
-def fmt_int(v):
+def fmt_int(v, cfg):
     if v is None:
         return "—"
-    return f"{int(v):,}".replace(",", ".")
+    s = f"{int(v):,}"
+    if cfg["thousand_sep"] != ",":
+        s = s.replace(",", cfg["thousand_sep"])
+    return s
 
 
 def fmt_pct(v, decimals=1):
     return f"{v*100:.{decimals}f}%"
 
 
-generated_at = date.today().isoformat()
+def build(country):
+    cfg = CONFIGS[country]
+    data = json.loads((ROOT / cfg["input"]).read_text(encoding="utf-8"))
+    summary = data["summary"]
+    products = data["products"]
+    dates = data["dates"]
 
-share_of_spend = (
-    summary["top15_units_allocated_spend_28d"] / summary["total_marketing_spend_28d"]
-    if summary["total_marketing_spend_28d"] else 0
-)
-share_lowcac_spend = (
-    summary["top15_lowcac_allocated_spend_28d"] / summary["total_marketing_spend_28d"]
-    if summary["total_marketing_spend_28d"] else 0
-)
+    generated_at = date.today().isoformat()
+    share_of_spend = (summary["top15_units_allocated_spend_28d"] / summary["total_marketing_spend_28d"]
+                       if summary["total_marketing_spend_28d"] else 0)
+    share_lowcac_spend = (summary["top15_lowcac_allocated_spend_28d"] / summary["total_marketing_spend_28d"]
+                           if summary["total_marketing_spend_28d"] else 0)
 
-html = f"""<!DOCTYPE html>
-<html lang="pt-BR">
+    # JS currency helper (matches the Python fmt_money)
+    js_currency = json.dumps({
+        "symbol": cfg["currency_symbol"],
+        "suffix": cfg["currency_suffix"],
+        "thousand": cfg["thousand_sep"],
+        "decimal": cfg["decimal_sep"],
+        "locale": "pt-BR" if country == "br" else "en-US",
+    })
+
+    html = f"""<!DOCTYPE html>
+<html lang="{cfg['lang']}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Larroude BR — CAC por Produto por Dia</title>
+<title>{cfg['title']}</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -82,6 +121,10 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .ccard h3 .pill{{font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;letter-spacing:.5px;text-transform:uppercase}}
 .pill-a{{background:#dbeafe;color:#1e40af}}
 .pill-b{{background:#dcfce7;color:#166534}}
+.nav{{display:flex;gap:10px;margin-bottom:18px}}
+.nav a{{padding:8px 18px;border-radius:8px;background:#fff;color:#475569;text-decoration:none;font-weight:600;font-size:13px;border:1.5px solid #e2e8f0}}
+.nav a.act{{background:#0f172a;color:#fff;border-color:#0f172a}}
+.nav a:hover:not(.act){{border-color:#059669;color:#059669}}
 .tbl{{width:100%;border-collapse:collapse;font-size:12.5px}}
 .tbl th{{text-align:left;padding:9px 10px;border-bottom:2px solid #e2e8f0;font-weight:600;color:#475569;cursor:pointer;user-select:none;white-space:nowrap}}
 .tbl th:hover{{color:#059669}}
@@ -112,48 +155,51 @@ canvas{{display:block;width:100%!important;height:340px!important}}
 <body>
 <div class="hdr">
   <div>
-    <div class="hdr-title">LARROUDE BR — CAC POR PRODUTO POR DIA</div>
-    <div class="hdr-sub">Top 15 por volume + Top 15 menor CAC · Janela {summary['window_start']} → {summary['window_end']} · Meta Ads BR (3 contas) + Shopify BR</div>
+    <div class="hdr-title">{cfg['header']}</div>
+    <div class="hdr-sub">{cfg['sub']} · Janela {summary['window_start']} → {summary['window_end']}</div>
   </div>
-  <div class="hdr-right">Gerado: {generated_at}<br>USD→BRL: {summary['usd_to_brl_rate']}</div>
+  <div class="hdr-right">Gerado: {generated_at}<br>{cfg['fx_note']}</div>
 </div>
 
 <div class="main">
+  <div class="nav">
+    <a href="dashboard_cac_br.html" class="{'act' if country=='br' else ''}">🇧🇷 Brasil</a>
+    <a href="dashboard_cac_us.html" class="{'act' if country=='us' else ''}">🇺🇸 United States</a>
+  </div>
 
   <div class="kgrid">
     <div class="kcard">
       <div class="klbl">CAC Blended · Top Volume</div>
-      <div class="kval">{fmt_brl(summary['top15_units_blended_cac_28d'])}</div>
-      <div class="ksub">15 mais vendidos · {fmt_int(summary['top15_units_new_customers_28d'])} novos</div>
+      <div class="kval">{fmt_money(summary['top15_units_blended_cac_28d'], cfg)}</div>
+      <div class="ksub">15 mais vendidos · {fmt_int(summary['top15_units_new_customers_28d'], cfg)} novos</div>
     </div>
     <div class="kcard" style="border-left-color:#10b981">
       <div class="klbl">CAC Blended · Menor CAC</div>
-      <div class="kval">{fmt_brl(summary['top15_lowcac_blended_cac_28d'])}</div>
-      <div class="ksub">15 mais eficientes · {fmt_int(summary['top15_lowcac_new_customers_28d'])} novos</div>
+      <div class="kval">{fmt_money(summary['top15_lowcac_blended_cac_28d'], cfg)}</div>
+      <div class="ksub">15 mais eficientes · {fmt_int(summary['top15_lowcac_new_customers_28d'], cfg)} novos</div>
     </div>
     <div class="kcard" style="border-left-color:#3b82f6">
       <div class="klbl">Spend Total 28D</div>
-      <div class="kval">{fmt_brl(summary['total_marketing_spend_28d'])}</div>
-      <div class="ksub">Meta Ads (3 contas BR)</div>
+      <div class="kval">{fmt_money(summary['total_marketing_spend_28d'], cfg)}</div>
+      <div class="ksub">{cfg['shop_label']}</div>
     </div>
     <div class="kcard" style="border-left-color:#8b5cf6">
       <div class="klbl">Spend Top Volume</div>
-      <div class="kval">{fmt_brl(summary['top15_units_allocated_spend_28d'])}</div>
+      <div class="kval">{fmt_money(summary['top15_units_allocated_spend_28d'], cfg)}</div>
       <div class="ksub">{fmt_pct(share_of_spend)} do total</div>
     </div>
     <div class="kcard" style="border-left-color:#f59e0b">
       <div class="klbl">Spend Menor CAC</div>
-      <div class="kval">{fmt_brl(summary['top15_lowcac_allocated_spend_28d'])}</div>
+      <div class="kval">{fmt_money(summary['top15_lowcac_allocated_spend_28d'], cfg)}</div>
       <div class="ksub">{fmt_pct(share_lowcac_spend)} do total</div>
     </div>
     <div class="kcard" style="border-left-color:#ec4899">
       <div class="klbl">Pedidos Totais (28D)</div>
-      <div class="kval">{fmt_int(summary['total_orders'])}</div>
+      <div class="kval">{fmt_int(summary['total_orders'], cfg)}</div>
       <div class="ksub">Todos os produtos</div>
     </div>
   </div>
 
-  <!-- Top 15 by units -->
   <div class="ccard">
     <h3>
       <span><span class="pill pill-a">A · Volume</span> &nbsp; Top 15 Produtos · por Unidades Vendidas</span>
@@ -176,7 +222,6 @@ canvas{{display:block;width:100%!important;height:340px!important}}
     </table>
   </div>
 
-  <!-- Top 15 by lowest CAC -->
   <div class="ccard">
     <h3>
       <span><span class="pill pill-b">B · Eficiência</span> &nbsp; Top 15 Produtos · Menor CAC</span>
@@ -199,7 +244,6 @@ canvas{{display:block;width:100%!important;height:340px!important}}
     </table>
   </div>
 
-  <!-- Trend chart -->
   <div class="ccard">
     <h3>Tendência Diária · CAC por Produto
       <span class="sub">Selecione um produto da união A∪B</span>
@@ -209,17 +253,16 @@ canvas{{display:block;width:100%!important;height:340px!important}}
       <select id="prodSel"></select>
       <label style="font-size:12px;color:#475569;font-weight:600;margin-left:14px">Métrica:</label>
       <select id="metricSel">
-        <option value="cac">CAC (R$)</option>
+        <option value="cac">CAC ({cfg['currency_symbol']})</option>
         <option value="new_customers">Novos Clientes</option>
-        <option value="spend">Spend Alocado (R$)</option>
-        <option value="revenue">Receita (R$)</option>
+        <option value="spend">Spend Alocado ({cfg['currency_symbol']})</option>
+        <option value="revenue">Receita ({cfg['currency_symbol']})</option>
         <option value="units">Unidades</option>
       </select>
     </div>
     <canvas id="trendChart"></canvas>
   </div>
 
-  <!-- Heatmap -->
   <div class="ccard">
     <h3>Matriz Diária · CAC por Produto × Dia
       <span class="sub">Verde = CAC baixo · Vermelho = CAC alto · Cinza = sem novo cliente</span>
@@ -239,9 +282,9 @@ canvas{{display:block;width:100%!important;height:340px!important}}
 
   <div class="note">
     <b>Metodologia.</b> CAC = (spend alocado ao produto) ÷ (novos clientes que compraram o produto).
-    <br><b>Spend alocado:</b> o spend total diário das 3 contas BR no Meta Ads (USD convertido para BRL via taxa fixa de {summary['usd_to_brl_rate']}) é distribuído entre TODOS os produtos proporcionalmente à fatia de receita de cada produto no dia.
+    <br><b>Spend alocado:</b> o spend total diário do Meta Ads é distribuído entre TODOS os produtos proporcionalmente à fatia de receita de cada produto no dia. {cfg['fx_note']}.
     <br><b>Novo cliente:</b> pedido onde <code>customer.numberOfOrders == 1</code>. Se o pedido tem múltiplos produtos, todos contam +1.
-    <br><b>Tabela B (menor CAC):</b> filtrada para produtos com pelo menos {summary['min_new_customers_lowcac_filter']} novos clientes em 28D, evitando produtos de cauda longa com 1-2 vendas que distorcem o ranking.
+    <br><b>Tabela B (menor CAC):</b> filtrada para produtos com pelo menos {summary['min_new_customers_lowcac_filter']} novos clientes em 28D, evitando produtos de cauda longa.
     <br><b>Limitações:</b> (1) atribuição proporcional não é uma medição direta campaign-to-product; (2) clientes "novos" cujo segundo pedido aconteça antes da consulta podem ser perdidos; (3) Google Ads não está incluído.
   </div>
 </div>
@@ -252,10 +295,17 @@ const DATES = {json.dumps(dates)};
 const SUMMARY = {json.dumps(summary)};
 const TOP15_UNITS_IDS = {json.dumps(summary['top15_units_ids'])};
 const TOP15_LOWCAC_IDS = {json.dumps(summary['top15_lowcac_ids'])};
+const CCY = {js_currency};
 const BY_ID = Object.fromEntries(PRODUCTS.map(p=>[p.product_id,p]));
 
-const fmtBRL=v=>v==null?'—':'R$ '+v.toLocaleString('pt-BR',{{maximumFractionDigits:0}});
-const fmtInt=v=>v==null?'—':v.toLocaleString('pt-BR');
+function fmtMoney(v){{
+  if(v==null) return '—';
+  return CCY.symbol+' '+v.toLocaleString(CCY.locale,{{maximumFractionDigits:0}})+CCY.suffix;
+}}
+function fmtInt(v){{
+  if(v==null) return '—';
+  return v.toLocaleString(CCY.locale);
+}}
 const fmtDate=s=>{{const [y,m,d]=s.split('-');return `${{d}}/${{m}}`}};
 
 const cacRange=()=>{{
@@ -322,11 +372,11 @@ function renderTableA(){{
       <td>${{r.rank}}</td>
       <td>${{r.title}}</td>
       <td class="r"><span class="bar" style="width:${{barW}}px;background:#bbf7d0"></span>${{fmtInt(r.units)}}</td>
-      <td class="r">${{fmtBRL(r.revenue)}}</td>
+      <td class="r">${{fmtMoney(r.revenue)}}</td>
       <td class="r">${{fmtInt(r.newcust)}}</td>
-      <td class="r">${{fmtBRL(r.spend)}}</td>
-      <td class="r" style="font-weight:700;color:${{cacColor}}">${{fmtBRL(r.cac)}}</td>
-      <td class="r">${{fmtBRL(r.ratio)}}</td>
+      <td class="r">${{fmtMoney(r.spend)}}</td>
+      <td class="r" style="font-weight:700;color:${{cacColor}}">${{fmtMoney(r.cac)}}</td>
+      <td class="r">${{fmtMoney(r.ratio)}}</td>
     </tr>`;
   }}).join('');
   body.querySelectorAll('tr').forEach(tr=>tr.onclick=()=>selectProduct(tr.dataset.pid));
@@ -335,19 +385,18 @@ function renderTableA(){{
 function renderTableB(){{
   const body=document.querySelector('#tbl-lowcac tbody');
   const rows=sortRows(tableRows(TOP15_LOWCAC_IDS), sortStateB);
-  // For B, lowest CAC should appear first if sorting ascending — so default is rank already.
   body.innerHTML=rows.map(r=>{{
     const sel=r.product_id===selPid?'sel':'';
     const cacColor=r.cac==null?'#94a3b8':colorForCac(r.cac);
     return `<tr class="${{sel}}" data-pid="${{r.product_id}}">
       <td>${{r.rank}}</td>
       <td>${{r.title}}</td>
-      <td class="r" style="font-weight:700;color:${{cacColor}}">${{fmtBRL(r.cac)}}</td>
+      <td class="r" style="font-weight:700;color:${{cacColor}}">${{fmtMoney(r.cac)}}</td>
       <td class="r">${{fmtInt(r.newcust)}}</td>
-      <td class="r">${{fmtBRL(r.spend)}}</td>
+      <td class="r">${{fmtMoney(r.spend)}}</td>
       <td class="r">${{fmtInt(r.units)}}</td>
-      <td class="r">${{fmtBRL(r.revenue)}}</td>
-      <td class="r">${{fmtBRL(r.ratio)}}</td>
+      <td class="r">${{fmtMoney(r.revenue)}}</td>
+      <td class="r">${{fmtMoney(r.ratio)}}</td>
     </tr>`;
   }}).join('');
   body.querySelectorAll('tr').forEach(tr=>tr.onclick=()=>selectProduct(tr.dataset.pid));
@@ -370,7 +419,6 @@ document.querySelectorAll('#tbl-lowcac th').forEach(th=>{{
   }};
 }});
 
-// Product select: union of A and B (preserving order, A first)
 const unionIds = [...new Set([...TOP15_UNITS_IDS, ...TOP15_LOWCAC_IDS])];
 const sel=document.getElementById('prodSel');
 sel.innerHTML=unionIds.map(pid=>{{
@@ -398,7 +446,7 @@ function renderTrend(){{
   const metric=document.getElementById('metricSel').value;
   const labels=DATES.map(fmtDate);
   const data=p.daily.map(d=>d[metric]);
-  const isBRL = metric==='cac'||metric==='spend'||metric==='revenue';
+  const isMoney = metric==='cac'||metric==='spend'||metric==='revenue';
   const color = metric==='cac' ? '#ef4444' : metric==='new_customers'?'#059669' : metric==='spend'?'#3b82f6' : metric==='revenue'?'#f59e0b' : '#8b5cf6';
 
   if(chart) chart.destroy();
@@ -413,17 +461,16 @@ function renderTrend(){{
       responsive:true, maintainAspectRatio:false,
       plugins:{{
         legend:{{display:true,position:'top',labels:{{font:{{size:12}}}}}},
-        tooltip:{{callbacks:{{label:c=>{{const v=c.parsed.y; return c.dataset.label+': '+(isBRL?fmtBRL(v):fmtInt(v))}}}}}}
+        tooltip:{{callbacks:{{label:c=>{{const v=c.parsed.y; return c.dataset.label+': '+(isMoney?fmtMoney(v):fmtInt(v))}}}}}}
       }},
       scales:{{
-        y:{{beginAtZero:true,ticks:{{callback:v=>isBRL?fmtBRL(v):fmtInt(v),font:{{size:11}}}}}},
+        y:{{beginAtZero:true,ticks:{{callback:v=>isMoney?fmtMoney(v):fmtInt(v),font:{{size:11}}}}}},
         x:{{ticks:{{font:{{size:10}},maxRotation:60,minRotation:45}}}}
       }}
     }}
   }});
 }}
 
-// Heatmap groups: A first, then B-only (so duplicates aren't shown twice)
 function renderHeat(){{
   const head=document.getElementById('heat-head');
   const body=document.getElementById('heat-body');
@@ -437,8 +484,8 @@ function renderHeat(){{
       const cells=p.daily.map(x=>{{
         const c=x.cac;
         const bg=colorForCac(c);
-        const txt = c==null ? (x.units>0?'·':'') : fmtBRL(c).replace('R$ ','');
-        const tip=`${{x.date}} | unidades:${{x.units}} | novos:${{x.new_customers}} | spend:${{fmtBRL(x.spend)}} | CAC:${{fmtBRL(c)}}`;
+        const txt = c==null ? (x.units>0?'·':'') : fmtMoney(c).replace(CCY.symbol+' ','');
+        const tip=`${{x.date}} | unidades:${{x.units}} | novos:${{x.new_customers}} | spend:${{fmtMoney(x.spend)}} | CAC:${{fmtMoney(c)}}`;
         const fg = c==null ? '#94a3b8' : 'rgba(15,23,42,0.85)';
         return `<td title="${{tip}}" style="background:${{bg}};color:${{fg}};font-weight:${{c==null?400:600}}">${{txt}}</td>`;
       }}).join('');
@@ -468,6 +515,17 @@ renderTrend();
 </html>
 """
 
-OUT.write_text(html, encoding="utf-8")
-print(f"OK Dashboard escrito -> {OUT}")
-print(f"   Tamanho: {OUT.stat().st_size/1024:.1f} KB")
+    out_path = ROOT / cfg["output"]
+    out_path.write_text(html, encoding="utf-8")
+    print(f"[{country.upper()}] OK Dashboard escrito -> {out_path}  ({out_path.stat().st_size/1024:.1f} KB)")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--country", choices=["br", "us"], default="br")
+    args = parser.parse_args()
+    build(args.country)
+
+
+if __name__ == "__main__":
+    main()

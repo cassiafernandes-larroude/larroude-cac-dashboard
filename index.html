@@ -2,11 +2,42 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Larroude — CAC por Produto</title>
-<meta http-equiv="refresh" content="0; url=dashboard_cac_br.html">
-<link rel="canonical" href="dashboard_cac_br.html">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#0f172a;color:#e2e8f0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;min-height:100vh;margin:0;gap:32px;padding:32px}
+h1{font-size:1.5rem;font-weight:700;letter-spacing:.05em;color:#94a3b8;margin:0}
+.sub{font-size:.85rem;color:#64748b;text-align:center;max-width:520px;line-height:1.5}
+.cards{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+a{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:240px;height:130px;border-radius:14px;text-decoration:none;
+  font-weight:700;font-size:1.1rem;letter-spacing:.03em;transition:transform .15s,box-shadow .15s}
+a:hover{transform:translateY(-3px);box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.us{background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff}
+.br{background:linear-gradient(135deg,#064e3b,#059669);color:#fff}
+span{font-size:.75rem;font-weight:400;opacity:.8;margin-top:6px;text-align:center}
+.foot{font-size:.7rem;color:#475569;margin-top:24px;text-align:center}
+</style>
 </head>
 <body>
-<p>Redirecionando para <a href="dashboard_cac_br.html">o dashboard</a>…</p>
+<h1>LARROUDE — CAC POR PRODUTO POR DIA</h1>
+<div class="sub">
+  Top 15 por volume + Top 15 com menor CAC, com matriz diária produto × dia.<br>
+  Janela rolling 28D · Meta Ads + Shopify.
+</div>
+<div class="cards">
+  <a class="br" href="dashboard_cac_br.html">
+    🇧🇷 Brasil
+    <span>Meta BR (3 contas) · Shopify BR<br>BRL · USD→BRL fixo 5,10</span>
+  </a>
+  <a class="us" href="dashboard_cac_us.html">
+    🇺🇸 United States
+    <span>Meta US (3 contas) · Shopify US<br>USD nativo</span>
+  </a>
+</div>
+<div class="foot">Atualização diária 09h BRT · <a href="https://github.com/cassiafernandes-larroude/larroude-cac-dashboard" style="color:#64748b">repo</a></div>
 </body>
 </html>
