@@ -19,8 +19,8 @@ CONFIGS = {
     "br": {
         "input":   "cac_by_product.json",
         "output":  "dashboard_cac_br.html",
-        "title":   "Larroude BR — CAC por Produto por Dia",
-        "header":  "LARROUDE BR — CAC POR PRODUTO POR DIA",
+        "title":   "Larroude BR — CAC por Produto",
+        "header":  "LARROUDE BR — CAC POR PRODUTO",
         "sub":     "Top 15 por volume + Top 15 menor CAC · Meta Ads BR (3 contas) + Shopify BR",
         "currency_symbol": "R$",
         "shop_label":   "Meta Ads (3 contas BR)",
@@ -31,8 +31,8 @@ CONFIGS = {
     "us": {
         "input":   "cac_by_product_us.json",
         "output":  "dashboard_cac_us.html",
-        "title":   "Larroude US — CAC por Produto por Dia",
-        "header":  "LARROUDE US — CAC POR PRODUTO POR DIA",
+        "title":   "Larroude US — CAC por Produto",
+        "header":  "LARROUDE US — CAC POR PRODUTO",
         "sub":     "Top 15 por volume + Top 15 menor CAC · Meta Ads US (3 contas) + Shopify US",
         "currency_symbol": "$",
         "shop_label":   "Meta Ads (3 contas US)",
