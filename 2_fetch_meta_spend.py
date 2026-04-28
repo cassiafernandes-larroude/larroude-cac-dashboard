@@ -35,7 +35,7 @@ ACCOUNTS = [
 USD_TO_BRL = 5.10
 
 END = date.today() - timedelta(days=1)
-START = END - timedelta(days=27)
+START = END - timedelta(days=89)  # 90D pra alimentar janelas 28/60/90D
 
 OUT_PATH = Path(__file__).parent / "meta_spend_daily.json"
 

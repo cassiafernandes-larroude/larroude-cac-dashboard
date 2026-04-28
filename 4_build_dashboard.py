@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """
-Step 4 — Build the self-contained interactive HTML dashboard for CAC by product by day.
-Renders TWO product tables:
-  (A) Top 15 by units sold (28D)
-  (B) Top 15 with lowest CAC (28D, min N new customers filter)
-Plus daily trend chart + product x day CAC heatmap.
+Step 4 — Build self-contained interactive HTML dashboard for CAC by product by day.
+NEW: period selector (28D / 60D / 90D) — todos os blocos recalculam ao trocar.
 
 Usage:
-  python 4_build_dashboard.py             # default: BR
-  python 4_build_dashboard.py --country us
   python 4_build_dashboard.py --country br
+  python 4_build_dashboard.py --country us
 """
 
 import argparse
@@ -27,12 +23,10 @@ CONFIGS = {
         "header":  "LARROUDE BR — CAC POR PRODUTO POR DIA",
         "sub":     "Top 15 por volume + Top 15 menor CAC · Meta Ads BR (3 contas) + Shopify BR",
         "currency_symbol": "R$",
-        "currency_suffix": "",
-        "decimal_sep":  ",",
-        "thousand_sep": ".",
         "shop_label":   "Meta Ads (3 contas BR)",
         "fx_note":      "USD→BRL fixo: 5.10 (conta act_1735567560524487 reporta em USD)",
         "lang":         "pt-BR",
+        "js_locale":    "pt-BR",
     },
     "us": {
         "input":   "cac_by_product_us.json",
@@ -41,59 +35,24 @@ CONFIGS = {
         "header":  "LARROUDE US — CAC POR PRODUTO POR DIA",
         "sub":     "Top 15 por volume + Top 15 menor CAC · Meta Ads US (3 contas) + Shopify US",
         "currency_symbol": "$",
-        "currency_suffix": "",
-        "decimal_sep":  ".",
-        "thousand_sep": ",",
         "shop_label":   "Meta Ads (3 contas US)",
         "fx_note":      "Sem conversão · todas as 3 contas + Shopify reportam em USD",
         "lang":         "pt-BR",
+        "js_locale":    "en-US",
     },
 }
-
-
-def fmt_money(v, cfg, decimals=0):
-    if v is None:
-        return "—"
-    s = f"{v:,.{decimals}f}"
-    if cfg["thousand_sep"] != "," or cfg["decimal_sep"] != ".":
-        s = s.replace(",", "_").replace(".", cfg["decimal_sep"]).replace("_", cfg["thousand_sep"])
-    return f"{cfg['currency_symbol']} {s}{cfg['currency_suffix']}"
-
-
-def fmt_int(v, cfg):
-    if v is None:
-        return "—"
-    s = f"{int(v):,}"
-    if cfg["thousand_sep"] != ",":
-        s = s.replace(",", cfg["thousand_sep"])
-    return s
-
-
-def fmt_pct(v, decimals=1):
-    return f"{v*100:.{decimals}f}%"
 
 
 def build(country):
     cfg = CONFIGS[country]
     data = json.loads((ROOT / cfg["input"]).read_text(encoding="utf-8"))
-    summary = data["summary"]
-    products = data["products"]
-    dates = data["dates"]
 
-    generated_at = date.today().isoformat()
-    share_of_spend = (summary["top15_units_allocated_spend_28d"] / summary["total_marketing_spend_28d"]
-                       if summary["total_marketing_spend_28d"] else 0)
-    share_lowcac_spend = (summary["top15_lowcac_allocated_spend_28d"] / summary["total_marketing_spend_28d"]
-                           if summary["total_marketing_spend_28d"] else 0)
-
-    # JS currency helper (matches the Python fmt_money)
     js_currency = json.dumps({
         "symbol": cfg["currency_symbol"],
-        "suffix": cfg["currency_suffix"],
-        "thousand": cfg["thousand_sep"],
-        "decimal": cfg["decimal_sep"],
-        "locale": "pt-BR" if country == "br" else "en-US",
+        "locale": cfg["js_locale"],
     })
+
+    generated_at = data.get("generated_at") or date.today().isoformat()
 
     html = f"""<!DOCTYPE html>
 <html lang="{cfg['lang']}">
@@ -105,11 +64,22 @@ def build(country):
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:#1e293b;line-height:1.4}}
-.hdr{{background:#0f172a;color:#fff;padding:18px 32px;display:flex;justify-content:space-between;align-items:center}}
+.hdr{{background:#0f172a;color:#fff;padding:18px 32px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}}
 .hdr-title{{font-size:20px;font-weight:700;letter-spacing:-.5px}}
 .hdr-sub{{font-size:12px;opacity:.65;margin-top:3px}}
 .hdr-right{{text-align:right;font-size:11px;opacity:.55}}
 .main{{max-width:1700px;margin:0 auto;padding:20px 28px}}
+.toolbar-row{{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:18px;background:#fff;border-radius:10px;padding:14px 18px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
+.nav{{display:flex;gap:10px}}
+.nav a{{padding:8px 18px;border-radius:8px;background:#f8fafc;color:#475569;text-decoration:none;font-weight:600;font-size:13px;border:1.5px solid #e2e8f0}}
+.nav a.act{{background:#0f172a;color:#fff;border-color:#0f172a}}
+.nav a:hover:not(.act){{border-color:#059669;color:#059669}}
+.period-group{{display:flex;gap:6px;align-items:center;margin-left:auto}}
+.period-lbl{{font-size:12px;font-weight:600;color:#475569;margin-right:4px}}
+.pbtn{{padding:7px 14px;border:1.5px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:600;color:#475569;transition:all .12s}}
+.pbtn:hover{{border-color:#059669;color:#059669}}
+.pbtn.act{{background:#059669;color:#fff;border-color:#059669}}
+.window-tag{{font-size:11px;color:#64748b;margin-left:10px;padding-left:10px;border-left:1.5px solid #e2e8f0}}
 .kgrid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:18px}}
 .kcard{{background:#fff;border-radius:10px;padding:16px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:3px solid #059669}}
 .klbl{{font-size:10.5px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}}
@@ -121,10 +91,6 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .ccard h3 .pill{{font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;letter-spacing:.5px;text-transform:uppercase}}
 .pill-a{{background:#dbeafe;color:#1e40af}}
 .pill-b{{background:#dcfce7;color:#166534}}
-.nav{{display:flex;gap:10px;margin-bottom:18px}}
-.nav a{{padding:8px 18px;border-radius:8px;background:#fff;color:#475569;text-decoration:none;font-weight:600;font-size:13px;border:1.5px solid #e2e8f0}}
-.nav a.act{{background:#0f172a;color:#fff;border-color:#0f172a}}
-.nav a:hover:not(.act){{border-color:#059669;color:#059669}}
 .tbl{{width:100%;border-collapse:collapse;font-size:12.5px}}
 .tbl th{{text-align:left;padding:9px 10px;border-bottom:2px solid #e2e8f0;font-weight:600;color:#475569;cursor:pointer;user-select:none;white-space:nowrap}}
 .tbl th:hover{{color:#059669}}
@@ -135,13 +101,13 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .tbl tr.sel td{{background:#ecfdf5}}
 .bar{{height:14px;background:#dcfce7;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:6px}}
 .heat{{font-size:10.5px;border-collapse:collapse;font-variant-numeric:tabular-nums}}
-.heat-wrap{{overflow:auto;max-width:100%}}
+.heat-wrap{{overflow:auto;max-width:100%;max-height:600px}}
 .heat th, .heat td{{padding:5px 6px;text-align:center;border:1px solid #f1f5f9;white-space:nowrap}}
 .heat th{{background:#f8fafc;color:#64748b;font-weight:600;position:sticky;top:0;z-index:1}}
 .heat td.lbl{{text-align:left;background:#fff;font-weight:500;color:#0f172a;position:sticky;left:0;z-index:2;max-width:240px;overflow:hidden;text-overflow:ellipsis;cursor:pointer}}
 .heat td.lbl.sel{{background:#ecfdf5}}
 .heat th.dh{{font-size:9.5px;color:#94a3b8;font-weight:500}}
-.heat tr.sep td{{background:#f1f5f9;font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:6px 8px;border:1px solid #e2e8f0}}
+.heat tr.sep td{{background:#f1f5f9;font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:6px 8px;border:1px solid #e2e8f0;position:sticky;left:0;z-index:1}}
 .note{{font-size:11px;color:#94a3b8;line-height:1.6;background:#f8fafc;padding:12px 16px;border-radius:8px;border-left:3px solid #94a3b8;margin-top:8px}}
 .note b{{color:#475569}}
 .legend{{display:flex;align-items:center;gap:8px;font-size:10.5px;color:#64748b;margin-top:8px;flex-wrap:wrap}}
@@ -149,53 +115,61 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .toolbar{{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}}
 .toolbar select{{padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;color:#334155;background:#fff;cursor:pointer}}
 canvas{{display:block;width:100%!important;height:340px!important}}
-.muted{{color:#94a3b8;font-style:italic}}
 </style>
 </head>
 <body>
 <div class="hdr">
   <div>
     <div class="hdr-title">{cfg['header']}</div>
-    <div class="hdr-sub">{cfg['sub']} · Janela {summary['window_start']} → {summary['window_end']}</div>
+    <div class="hdr-sub">{cfg['sub']}</div>
   </div>
   <div class="hdr-right">Gerado: {generated_at}<br>{cfg['fx_note']}</div>
 </div>
 
 <div class="main">
-  <div class="nav">
-    <a href="dashboard_cac_br.html" class="{'act' if country=='br' else ''}">🇧🇷 Brasil</a>
-    <a href="dashboard_cac_us.html" class="{'act' if country=='us' else ''}">🇺🇸 United States</a>
+  <div class="toolbar-row">
+    <div class="nav">
+      <a href="dashboard_cac_br.html" class="{'act' if country=='br' else ''}">🇧🇷 Brasil</a>
+      <a href="dashboard_cac_us.html" class="{'act' if country=='us' else ''}">🇺🇸 United States</a>
+    </div>
+    <div class="period-group">
+      <span class="period-lbl">Período:</span>
+      <button class="pbtn" data-period="28">28D</button>
+      <button class="pbtn" data-period="60">60D</button>
+      <button class="pbtn" data-period="90">90D</button>
+      <span class="window-tag" id="window-tag">—</span>
+    </div>
   </div>
 
   <div class="kgrid">
     <div class="kcard">
       <div class="klbl">CAC Blended · Top Volume</div>
-      <div class="kval">{fmt_money(summary['top15_units_blended_cac_28d'], cfg)}</div>
-      <div class="ksub">15 mais vendidos · {fmt_int(summary['top15_units_new_customers_28d'], cfg)} novos</div>
+      <div class="kval" id="k-cac-vol">—</div>
+      <div class="ksub" id="k-cac-vol-sub">—</div>
     </div>
     <div class="kcard" style="border-left-color:#10b981">
       <div class="klbl">CAC Blended · Menor CAC</div>
-      <div class="kval">{fmt_money(summary['top15_lowcac_blended_cac_28d'], cfg)}</div>
-      <div class="ksub">15 mais eficientes · {fmt_int(summary['top15_lowcac_new_customers_28d'], cfg)} novos</div>
+      <div class="kval" id="k-cac-low">—</div>
+      <div class="ksub" id="k-cac-low-sub">—</div>
     </div>
     <div class="kcard" style="border-left-color:#3b82f6">
-      <div class="klbl">Spend Total 28D</div>
-      <div class="kval">{fmt_money(summary['total_marketing_spend_28d'], cfg)}</div>
+      <div class="klbl">Spend Total</div>
+      <div class="kval" id="k-spend">—</div>
       <div class="ksub">{cfg['shop_label']}</div>
     </div>
     <div class="kcard" style="border-left-color:#8b5cf6">
       <div class="klbl">Spend Top Volume</div>
-      <div class="kval">{fmt_money(summary['top15_units_allocated_spend_28d'], cfg)}</div>
-      <div class="ksub">{fmt_pct(share_of_spend)} do total</div>
+      <div class="kval" id="k-spend-vol">—</div>
+      <div class="ksub" id="k-spend-vol-sub">—</div>
     </div>
     <div class="kcard" style="border-left-color:#f59e0b">
       <div class="klbl">Spend Menor CAC</div>
-      <div class="kval">{fmt_money(summary['top15_lowcac_allocated_spend_28d'], cfg)}</div>
-      <div class="ksub">{fmt_pct(share_lowcac_spend)} do total</div>
+      <div class="kval" id="k-spend-low">—</div>
+      <div class="ksub" id="k-spend-low-sub">—</div>
     </div>
     <div class="kcard" style="border-left-color:#ec4899">
-      <div class="klbl">Pedidos Totais (28D)</div>
-      <div class="kval">{fmt_int(summary['total_orders'], cfg)}</div>
+      <div class="klbl">Pedidos no Período</div>
+      <div class="kval" id="k-orders">—</div>
       <div class="ksub">Todos os produtos</div>
     </div>
   </div>
@@ -203,7 +177,7 @@ canvas{{display:block;width:100%!important;height:340px!important}}
   <div class="ccard">
     <h3>
       <span><span class="pill pill-a">A · Volume</span> &nbsp; Top 15 Produtos · por Unidades Vendidas</span>
-      <span class="sub">Clique no cabeçalho para ordenar · Clique numa linha para destacar nos gráficos abaixo</span>
+      <span class="sub">Clique no cabeçalho para ordenar · Clique numa linha para destacar</span>
     </h3>
     <table class="tbl" id="tbl-units">
       <thead>
@@ -211,10 +185,10 @@ canvas{{display:block;width:100%!important;height:340px!important}}
           <th data-sort="rank">#</th>
           <th data-sort="title">Produto</th>
           <th data-sort="units" class="r">Unidades</th>
-          <th data-sort="revenue" class="r">Receita 28D</th>
-          <th data-sort="newcust" class="r">Novos Clientes</th>
-          <th data-sort="spend" class="r">Spend Alocado</th>
-          <th data-sort="cac" class="r">CAC 28D</th>
+          <th data-sort="revenue" class="r">Receita</th>
+          <th data-sort="new_customers" class="r">Novos Clientes</th>
+          <th data-sort="allocated_spend" class="r">Spend Alocado</th>
+          <th data-sort="cac" class="r">CAC</th>
           <th data-sort="ratio" class="r">Receita/Cliente</th>
         </tr>
       </thead>
@@ -225,18 +199,18 @@ canvas{{display:block;width:100%!important;height:340px!important}}
   <div class="ccard">
     <h3>
       <span><span class="pill pill-b">B · Eficiência</span> &nbsp; Top 15 Produtos · Menor CAC</span>
-      <span class="sub">Filtro: ≥ {summary['min_new_customers_lowcac_filter']} novos clientes em 28D (anti-ruído) · Clique para destacar</span>
+      <span class="sub" id="filter-sub">—</span>
     </h3>
     <table class="tbl" id="tbl-lowcac">
       <thead>
         <tr>
           <th data-sort="rank">#</th>
           <th data-sort="title">Produto</th>
-          <th data-sort="cac" class="r">CAC 28D</th>
-          <th data-sort="newcust" class="r">Novos Clientes</th>
-          <th data-sort="spend" class="r">Spend Alocado</th>
+          <th data-sort="cac" class="r">CAC</th>
+          <th data-sort="new_customers" class="r">Novos Clientes</th>
+          <th data-sort="allocated_spend" class="r">Spend Alocado</th>
           <th data-sort="units" class="r">Unidades</th>
-          <th data-sort="revenue" class="r">Receita 28D</th>
+          <th data-sort="revenue" class="r">Receita</th>
           <th data-sort="ratio" class="r">Receita/Cliente</th>
         </tr>
       </thead>
@@ -284,39 +258,36 @@ canvas{{display:block;width:100%!important;height:340px!important}}
     <b>Metodologia.</b> CAC = (spend alocado ao produto) ÷ (novos clientes que compraram o produto).
     <br><b>Spend alocado:</b> o spend total diário do Meta Ads é distribuído entre TODOS os produtos proporcionalmente à fatia de receita de cada produto no dia. {cfg['fx_note']}.
     <br><b>Novo cliente:</b> pedido onde <code>customer.numberOfOrders == 1</code>. Se o pedido tem múltiplos produtos, todos contam +1.
-    <br><b>Tabela B (menor CAC):</b> filtrada para produtos com pelo menos {summary['min_new_customers_lowcac_filter']} novos clientes em 28D, evitando produtos de cauda longa.
+    <br><b>Tabela B (menor CAC):</b> filtrada por mínimo de novos clientes que escala com a janela (≥20 em 28D, ≥43 em 60D, ≥64 em 90D) — proporcional ao tempo, anti-ruído.
     <br><b>Limitações:</b> (1) atribuição proporcional não é uma medição direta campaign-to-product; (2) clientes "novos" cujo segundo pedido aconteça antes da consulta podem ser perdidos; (3) Google Ads não está incluído.
   </div>
 </div>
 
 <script>
-const PRODUCTS = {json.dumps(products, ensure_ascii=False)};
-const DATES = {json.dumps(dates)};
-const SUMMARY = {json.dumps(summary)};
-const TOP15_UNITS_IDS = {json.dumps(summary['top15_units_ids'])};
-const TOP15_LOWCAC_IDS = {json.dumps(summary['top15_lowcac_ids'])};
+const DATA = {json.dumps(data, ensure_ascii=False)};
 const CCY = {js_currency};
-const BY_ID = Object.fromEntries(PRODUCTS.map(p=>[p.product_id,p]));
 
-function fmtMoney(v){{
-  if(v==null) return '—';
-  return CCY.symbol+' '+v.toLocaleString(CCY.locale,{{maximumFractionDigits:0}})+CCY.suffix;
-}}
-function fmtInt(v){{
-  if(v==null) return '—';
-  return v.toLocaleString(CCY.locale);
-}}
+const fmtMoney=v=>v==null?'—':CCY.symbol+' '+v.toLocaleString(CCY.locale,{{maximumFractionDigits:0}});
+const fmtInt=v=>v==null?'—':v.toLocaleString(CCY.locale);
+const fmtPct=v=>(v*100).toFixed(1)+'%';
 const fmtDate=s=>{{const [y,m,d]=s.split('-');return `${{d}}/${{m}}`}};
 
-const cacRange=()=>{{
+let currentPeriod = '28';
+let selPid = null;
+let sortStateA = {{key:'rank', dir:1}};
+let sortStateB = {{key:'rank', dir:1}};
+let chart = null;
+
+function getPeriod(){{ return DATA.periods[currentPeriod]; }}
+
+function cacRange(period){{
   let mn=Infinity,mx=-Infinity;
-  PRODUCTS.forEach(p=>p.daily.forEach(x=>{{if(x.cac!=null){{mn=Math.min(mn,x.cac);mx=Math.max(mx,x.cac)}}}}));
+  period.products.forEach(p=>p.daily.forEach(x=>{{if(x.cac!=null){{mn=Math.min(mn,x.cac);mx=Math.max(mx,x.cac)}}}}));
   return [mn,mx];
-}};
-const [CAC_MIN,CAC_MAX]=cacRange();
-function colorForCac(c){{
+}}
+function colorForCac(c, mn, mx){{
   if(c==null) return '#f1f5f9';
-  const t=Math.max(0,Math.min(1,(c-CAC_MIN)/(CAC_MAX-CAC_MIN||1)));
+  const t=Math.max(0,Math.min(1,(c-mn)/(mx-mn||1)));
   if(t<0.5){{
     const k=t/0.5;
     const r=Math.round(16+(251-16)*k), g=Math.round(185+(191-185)*k), b=Math.round(129+(36-129)*k);
@@ -328,25 +299,17 @@ function colorForCac(c){{
   }}
 }}
 
-let selPid = TOP15_UNITS_IDS[0];
-let sortStateA={{key:'rank',dir:1}};
-let sortStateB={{key:'rank',dir:1}};
-const maxUnits = Math.max(...PRODUCTS.map(p=>p.units_28d));
-
-function tableRows(ids){{
+function tableRows(period, ids){{
+  const byId = Object.fromEntries(period.products.map(p=>[p.product_id, p]));
   return ids.map((pid,i)=>{{
-    const p=BY_ID[pid];
+    const p = byId[pid];
+    if(!p) return null;
     return {{
       ...p,
-      rank:i+1,
-      ratio: p.new_customers_28d ? p.revenue_28d/p.new_customers_28d : null,
-      newcust: p.new_customers_28d,
-      cac: p.cac_28d,
-      revenue: p.revenue_28d,
-      spend: p.allocated_spend_28d,
-      units: p.units_28d,
+      rank: i+1,
+      ratio: p.new_customers ? p.revenue/p.new_customers : null,
     }};
-  }});
+  }}).filter(Boolean);
 }}
 
 function sortRows(rows, state){{
@@ -361,20 +324,40 @@ function sortRows(rows, state){{
   return arr;
 }}
 
+function renderKPIs(){{
+  const p = getPeriod();
+  const s = p.summary;
+  document.getElementById('k-cac-vol').textContent = fmtMoney(s.top15_units_blended_cac);
+  document.getElementById('k-cac-vol-sub').textContent = `15 mais vendidos · ${{fmtInt(s.top15_units_new_customers)}} novos`;
+  document.getElementById('k-cac-low').textContent = fmtMoney(s.top15_lowcac_blended_cac);
+  document.getElementById('k-cac-low-sub').textContent = `15 mais eficientes · ${{fmtInt(s.top15_lowcac_new_customers)}} novos`;
+  document.getElementById('k-spend').textContent = fmtMoney(s.total_marketing_spend);
+  document.getElementById('k-spend-vol').textContent = fmtMoney(s.top15_units_allocated_spend);
+  document.getElementById('k-spend-vol-sub').textContent = fmtPct(s.top15_units_allocated_spend / (s.total_marketing_spend||1)) + ' do total';
+  document.getElementById('k-spend-low').textContent = fmtMoney(s.top15_lowcac_allocated_spend);
+  document.getElementById('k-spend-low-sub').textContent = fmtPct(s.top15_lowcac_allocated_spend / (s.total_marketing_spend||1)) + ' do total';
+  document.getElementById('k-orders').textContent = fmtInt(s.total_orders_in_window);
+  document.getElementById('window-tag').textContent = `Janela ${{p.window_start}} → ${{p.window_end}}`;
+  document.getElementById('filter-sub').textContent = `Filtro: ≥ ${{s.min_new_customers_lowcac_filter}} novos clientes em ${{s.days}}D (anti-ruído) · Clique para destacar`;
+}}
+
 function renderTableA(){{
+  const p = getPeriod();
   const body=document.querySelector('#tbl-units tbody');
-  const rows=sortRows(tableRows(TOP15_UNITS_IDS), sortStateA);
-  body.innerHTML=rows.map(r=>{{
-    const sel=r.product_id===selPid?'sel':'';
-    const barW=Math.round(60*r.units/maxUnits);
-    const cacColor=r.cac==null?'#94a3b8':colorForCac(r.cac);
+  const rows = sortRows(tableRows(p, p.summary.top15_units_ids), sortStateA);
+  const maxUnits = Math.max(...rows.map(r=>r.units), 1);
+  const [mn,mx] = cacRange(p);
+  body.innerHTML = rows.map(r=>{{
+    const sel = r.product_id===selPid ? 'sel' : '';
+    const barW = Math.round(60*r.units/maxUnits);
+    const cacColor = r.cac==null ? '#94a3b8' : colorForCac(r.cac, mn, mx);
     return `<tr class="${{sel}}" data-pid="${{r.product_id}}">
       <td>${{r.rank}}</td>
       <td>${{r.title}}</td>
       <td class="r"><span class="bar" style="width:${{barW}}px;background:#bbf7d0"></span>${{fmtInt(r.units)}}</td>
       <td class="r">${{fmtMoney(r.revenue)}}</td>
-      <td class="r">${{fmtInt(r.newcust)}}</td>
-      <td class="r">${{fmtMoney(r.spend)}}</td>
+      <td class="r">${{fmtInt(r.new_customers)}}</td>
+      <td class="r">${{fmtMoney(r.allocated_spend)}}</td>
       <td class="r" style="font-weight:700;color:${{cacColor}}">${{fmtMoney(r.cac)}}</td>
       <td class="r">${{fmtMoney(r.ratio)}}</td>
     </tr>`;
@@ -383,17 +366,19 @@ function renderTableA(){{
 }}
 
 function renderTableB(){{
+  const p = getPeriod();
   const body=document.querySelector('#tbl-lowcac tbody');
-  const rows=sortRows(tableRows(TOP15_LOWCAC_IDS), sortStateB);
-  body.innerHTML=rows.map(r=>{{
-    const sel=r.product_id===selPid?'sel':'';
-    const cacColor=r.cac==null?'#94a3b8':colorForCac(r.cac);
+  const rows = sortRows(tableRows(p, p.summary.top15_lowcac_ids), sortStateB);
+  const [mn,mx] = cacRange(p);
+  body.innerHTML = rows.map(r=>{{
+    const sel = r.product_id===selPid ? 'sel' : '';
+    const cacColor = r.cac==null ? '#94a3b8' : colorForCac(r.cac, mn, mx);
     return `<tr class="${{sel}}" data-pid="${{r.product_id}}">
       <td>${{r.rank}}</td>
       <td>${{r.title}}</td>
       <td class="r" style="font-weight:700;color:${{cacColor}}">${{fmtMoney(r.cac)}}</td>
-      <td class="r">${{fmtInt(r.newcust)}}</td>
-      <td class="r">${{fmtMoney(r.spend)}}</td>
+      <td class="r">${{fmtInt(r.new_customers)}}</td>
+      <td class="r">${{fmtMoney(r.allocated_spend)}}</td>
       <td class="r">${{fmtInt(r.units)}}</td>
       <td class="r">${{fmtMoney(r.revenue)}}</td>
       <td class="r">${{fmtMoney(r.ratio)}}</td>
@@ -402,6 +387,131 @@ function renderTableB(){{
   body.querySelectorAll('tr').forEach(tr=>tr.onclick=()=>selectProduct(tr.dataset.pid));
 }}
 
+function renderProductSelect(){{
+  const p = getPeriod();
+  const A = p.summary.top15_units_ids;
+  const B = p.summary.top15_lowcac_ids;
+  const unionIds = [...new Set([...A, ...B])];
+  const byId = Object.fromEntries(p.products.map(x=>[x.product_id,x]));
+  const sel = document.getElementById('prodSel');
+  sel.innerHTML = unionIds.map(pid=>{{
+    const prod = byId[pid];
+    if(!prod) return '';
+    const inA=A.includes(pid), inB=B.includes(pid);
+    const tag = inA&&inB ? '[A·B]' : inA ? '[A]' : '[B]';
+    return `<option value="${{pid}}">${{tag}} ${{prod.title}}</option>`;
+  }}).join('');
+
+  // Adjust selection: if current selPid not in current period, reset to first
+  if(!unionIds.includes(selPid)) {{
+    selPid = unionIds[0];
+  }}
+  sel.value = selPid;
+}}
+
+function renderTrend(){{
+  const p = getPeriod();
+  const prod = p.products.find(x=>x.product_id===selPid);
+  if(!prod){{
+    if(chart){{ chart.destroy(); chart = null; }}
+    return;
+  }}
+  const metric = document.getElementById('metricSel').value;
+  const labels = p.dates.map(fmtDate);
+  const data = prod.daily.map(d=>d[metric]);
+  const isMoney = ['cac','spend','revenue'].includes(metric);
+  const color = metric==='cac' ? '#ef4444' : metric==='new_customers'?'#059669' : metric==='spend'?'#3b82f6' : metric==='revenue'?'#f59e0b' : '#8b5cf6';
+
+  if(chart) chart.destroy();
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  chart = new Chart(ctx, {{
+    type:'line',
+    data:{{ labels, datasets:[{{label:prod.title, data, borderColor:color, backgroundColor:color+'22', tension:0.25, spanGaps:true, pointRadius:p.dates.length<=30?3:1.5, pointHoverRadius:6}}]}},
+    options:{{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{{
+        legend:{{display:true,position:'top',labels:{{font:{{size:12}}}}}},
+        tooltip:{{callbacks:{{label:c=>{{const v=c.parsed.y; return c.dataset.label+': '+(isMoney?fmtMoney(v):fmtInt(v))}}}}}}
+      }},
+      scales:{{
+        y:{{beginAtZero:true,ticks:{{callback:v=>isMoney?fmtMoney(v):fmtInt(v),font:{{size:11}}}}}},
+        x:{{ticks:{{font:{{size:9.5}},maxRotation:60,minRotation:45,autoSkip:true,maxTicksLimit:30}}}}
+      }}
+    }}
+  }});
+}}
+
+function renderHeat(){{
+  const p = getPeriod();
+  const A = p.summary.top15_units_ids;
+  const B = p.summary.top15_lowcac_ids;
+  const byId = Object.fromEntries(p.products.map(x=>[x.product_id,x]));
+  const [mn,mx] = cacRange(p);
+
+  const head = document.getElementById('heat-head');
+  const body = document.getElementById('heat-body');
+  head.innerHTML = `<th class="dh" style="text-align:left;min-width:240px;position:sticky;left:0;background:#f8fafc;z-index:3">Produto</th>` +
+    p.dates.map(d=>`<th class="dh">${{fmtDate(d)}}</th>`).join('');
+
+  const renderGroup=(ids, label)=>{{
+    let html=`<tr class="sep"><td colspan="${{p.dates.length+1}}">${{label}}</td></tr>`;
+    html += ids.map(pid=>{{
+      const prod = byId[pid];
+      if(!prod) return '';
+      const sel = pid===selPid ? 'sel' : '';
+      const cells = prod.daily.map(x=>{{
+        const c = x.cac;
+        const bg = colorForCac(c, mn, mx);
+        const txt = c==null ? (x.units>0?'·':'') : fmtMoney(c).replace(CCY.symbol+' ','');
+        const tip = `${{x.date}} | unidades:${{x.units}} | novos:${{x.new_customers}} | spend:${{fmtMoney(x.spend)}} | CAC:${{fmtMoney(c)}}`;
+        const fg = c==null ? '#94a3b8' : 'rgba(15,23,42,0.85)';
+        return `<td title="${{tip}}" style="background:${{bg}};color:${{fg}};font-weight:${{c==null?400:600}}">${{txt}}</td>`;
+      }}).join('');
+      return `<tr><td class="lbl ${{sel}}" data-pid="${{pid}}" title="${{prod.title}}">${{prod.title.length>40?prod.title.slice(0,40)+'…':prod.title}}</td>${{cells}}</tr>`;
+    }}).join('');
+    return html;
+  }};
+
+  const aOnly = A;
+  const bOnly = B.filter(p=>!A.includes(p));
+  let html = renderGroup(aOnly, 'A · Top 15 por Volume');
+  if(bOnly.length) html += renderGroup(bOnly, 'B · Menor CAC (não em A)');
+  body.innerHTML = html;
+  body.querySelectorAll('td.lbl').forEach(td=>td.onclick=()=>selectProduct(td.dataset.pid));
+}}
+
+function selectProduct(pid){{
+  selPid = pid;
+  document.getElementById('prodSel').value = pid;
+  renderTableA();
+  renderTableB();
+  renderHeat();
+  renderTrend();
+}}
+
+function renderAll(){{
+  renderKPIs();
+  renderProductSelect();
+  renderTableA();
+  renderTableB();
+  renderHeat();
+  renderTrend();
+}}
+
+function setPeriod(period){{
+  currentPeriod = period;
+  document.querySelectorAll('.pbtn').forEach(b=>{{
+    b.classList.toggle('act', b.dataset.period === period);
+  }});
+  // Reset sort to default rank when changing period
+  sortStateA = {{key:'rank', dir:1}};
+  sortStateB = {{key:'rank', dir:1}};
+  renderAll();
+}}
+
+document.querySelectorAll('.pbtn').forEach(b=>{{
+  b.onclick = ()=>setPeriod(b.dataset.period);
+}});
 document.querySelectorAll('#tbl-units th').forEach(th=>{{
   th.onclick=()=>{{
     const k=th.dataset.sort;
@@ -418,111 +528,22 @@ document.querySelectorAll('#tbl-lowcac th').forEach(th=>{{
     renderTableB();
   }};
 }});
+document.getElementById('prodSel').onchange = (e)=>selectProduct(e.target.value);
+document.getElementById('metricSel').onchange = ()=>renderTrend();
 
-const unionIds = [...new Set([...TOP15_UNITS_IDS, ...TOP15_LOWCAC_IDS])];
-const sel=document.getElementById('prodSel');
-sel.innerHTML=unionIds.map(pid=>{{
-  const p=BY_ID[pid];
-  const inA=TOP15_UNITS_IDS.includes(pid), inB=TOP15_LOWCAC_IDS.includes(pid);
-  const tag = inA&&inB ? '[A·B]' : inA ? '[A]' : '[B]';
-  return `<option value="${{pid}}">${{tag}} ${{p.title}}</option>`;
-}}).join('');
-sel.value=selPid;
-sel.onchange=()=>selectProduct(sel.value);
-document.getElementById('metricSel').onchange=()=>renderTrend();
-
-function selectProduct(pid){{
-  selPid=pid;
-  sel.value=pid;
-  renderTableA();
-  renderTableB();
-  renderHeat();
-  renderTrend();
-}}
-
-let chart;
-function renderTrend(){{
-  const p=BY_ID[selPid];
-  const metric=document.getElementById('metricSel').value;
-  const labels=DATES.map(fmtDate);
-  const data=p.daily.map(d=>d[metric]);
-  const isMoney = metric==='cac'||metric==='spend'||metric==='revenue';
-  const color = metric==='cac' ? '#ef4444' : metric==='new_customers'?'#059669' : metric==='spend'?'#3b82f6' : metric==='revenue'?'#f59e0b' : '#8b5cf6';
-
-  if(chart) chart.destroy();
-  const ctx=document.getElementById('trendChart').getContext('2d');
-  chart=new Chart(ctx,{{
-    type:'line',
-    data:{{
-      labels,
-      datasets:[{{label:p.title, data, borderColor:color, backgroundColor:color+'22', tension:0.25, spanGaps:true, pointRadius:3, pointHoverRadius:6}}]
-    }},
-    options:{{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{{
-        legend:{{display:true,position:'top',labels:{{font:{{size:12}}}}}},
-        tooltip:{{callbacks:{{label:c=>{{const v=c.parsed.y; return c.dataset.label+': '+(isMoney?fmtMoney(v):fmtInt(v))}}}}}}
-      }},
-      scales:{{
-        y:{{beginAtZero:true,ticks:{{callback:v=>isMoney?fmtMoney(v):fmtInt(v),font:{{size:11}}}}}},
-        x:{{ticks:{{font:{{size:10}},maxRotation:60,minRotation:45}}}}
-      }}
-    }}
-  }});
-}}
-
-function renderHeat(){{
-  const head=document.getElementById('heat-head');
-  const body=document.getElementById('heat-body');
-  head.innerHTML=`<th class="dh" style="text-align:left;min-width:240px">Produto</th>`+DATES.map(d=>`<th class="dh">${{fmtDate(d)}}</th>`).join('');
-
-  const renderGroup=(ids, label)=>{{
-    let html=`<tr class="sep"><td colspan="${{DATES.length+1}}">${{label}}</td></tr>`;
-    html+=ids.map(pid=>{{
-      const p=BY_ID[pid];
-      const sel = pid===selPid ? 'sel' : '';
-      const cells=p.daily.map(x=>{{
-        const c=x.cac;
-        const bg=colorForCac(c);
-        const txt = c==null ? (x.units>0?'·':'') : fmtMoney(c).replace(CCY.symbol+' ','');
-        const tip=`${{x.date}} | unidades:${{x.units}} | novos:${{x.new_customers}} | spend:${{fmtMoney(x.spend)}} | CAC:${{fmtMoney(c)}}`;
-        const fg = c==null ? '#94a3b8' : 'rgba(15,23,42,0.85)';
-        return `<td title="${{tip}}" style="background:${{bg}};color:${{fg}};font-weight:${{c==null?400:600}}">${{txt}}</td>`;
-      }}).join('');
-      return `<tr><td class="lbl ${{sel}}" data-pid="${{pid}}" title="${{p.title}}">${{p.title.length>40?p.title.slice(0,40)+'…':p.title}}</td>${{cells}}</tr>`;
-    }}).join('');
-    return html;
-  }};
-
-  const aOnly = TOP15_UNITS_IDS;
-  const bOnly = TOP15_LOWCAC_IDS.filter(p=>!TOP15_UNITS_IDS.includes(p));
-
-  let html = renderGroup(aOnly, 'A · Top 15 por Volume');
-  if(bOnly.length) html += renderGroup(bOnly, 'B · Menor CAC (não em A)');
-  body.innerHTML = html;
-
-  body.querySelectorAll('td.lbl').forEach(td=>{{
-    td.onclick=()=>selectProduct(td.dataset.pid);
-  }});
-}}
-
-renderTableA();
-renderTableB();
-renderHeat();
-renderTrend();
+setPeriod('28');
 </script>
 </body>
 </html>
 """
-
-    out_path = ROOT / cfg["output"]
-    out_path.write_text(html, encoding="utf-8")
-    print(f"[{country.upper()}] OK Dashboard escrito -> {out_path}  ({out_path.stat().st_size/1024:.1f} KB)")
+    out = ROOT / cfg["output"]
+    out.write_text(html, encoding="utf-8")
+    print(f"[{country.upper()}] OK Dashboard escrito -> {out}  ({out.stat().st_size/1024:.1f} KB)")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--country", choices=["br", "us"], default="br")
+    parser.add_argument("--country", choices=["br","us"], default="br")
     args = parser.parse_args()
     build(args.country)
 

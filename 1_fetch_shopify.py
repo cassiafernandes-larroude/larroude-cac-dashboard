@@ -28,9 +28,9 @@ VERSION = os.environ.get("SHOPIFY_API_VERSION", "2025-01")
 ENDPOINT = f"https://{SHOP}/admin/api/{VERSION}/graphql.json"
 HEADERS = {"X-Shopify-Access-Token": TOKEN, "Content-Type": "application/json"}
 
-# Window: last 28 full days, ending yesterday
+# Window: last 90 full days, ending yesterday (alimenta janelas 28/60/90D no compute)
 END = date.today() - timedelta(days=1)
-START = END - timedelta(days=27)
+START = END - timedelta(days=89)
 START_ISO = datetime.combine(START, datetime.min.time(), tzinfo=timezone.utc).isoformat()
 END_ISO = datetime.combine(END + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).isoformat()
 
